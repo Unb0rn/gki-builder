@@ -67,6 +67,9 @@ jobs:
       - name: Install ccache
         run: sudo apt update && sudo apt install -y ccache
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up ccache
         run: |
           mkdir -p ~/.cache/bazel
@@ -114,7 +117,6 @@ jobs:
           SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
           echo "Using branch for SUSFS: $SUSFS_BRANCH"
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
-          git clone https://github.com/WildPlusKernel/kernel_patches.git
 
       - name: Check Disk Space Before Sync
         run: |
@@ -204,17 +206,14 @@ jobs:
               cd ./KernelSU-Next
               cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
               patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
-              cp ../../kernel_patches/next/fix_apk_sign.c.patch ./
+              cp ../../patches/next/susfs-adapt/fix_apk_sign.c.patch ./
               patch -p1 --forward --fuzz=3 < fix_apk_sign.c.patch
-              cp ../../kernel_patches/next/fix_core_hook.c.patch ./
+              cp ../../patches/next/susfs-adapt/fix_core_hook.c.patch ./
               patch -p1 --forward --fuzz=3 < fix_core_hook.c.patch
-              cp ../../kernel_patches/next/fix_selinux.c.patch ./
+              cp ../../patches/next/susfs-adapt/fix_selinux.c.patch ./
               patch -p1 --forward --fuzz=3 < fix_selinux.c.patch
-              cp ../../kernel_patches/next/fix_ksud.c.patch ./
+              cp ../../patches/next/susfs-adapt/fix_ksud.c.patch ./
               patch -p1 --forward --fuzz=3 < fix_ksud.c.patch
-              #cp ../../kernel_patches/next/fix_sucompat.c.patch ./
-              #patch -p1 --forward --fuzz=3 < fix_sucompat.c.patch
-              #sed -i '/bool ksu_devpts_hook = false;/d' ./kernel/sucompat.c
               ;;
           esac
 
@@ -246,7 +245,7 @@ jobs:
           
           if [ "${{ inputs.kernelsu_variant }}" == "NEXT" ]; then
             echo "Applying hooks for KernelSU-Next..."
-            cp ../../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./
+            cp ../../patches/hooks/scope_min_manual_hooks_v1.4.patch ./
             patch -p1 -F 3 < scope_min_manual_hooks_v1.4.patch
           fi
 
@@ -254,7 +253,7 @@ jobs:
         run: |
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG/common"
-          cp ../../kernel_patches/69_hide_stuff.patch ./
+          cp ../../patches/hide/69_hide_stuff.patch ./
           patch -p1 -F 3 < 69_hide_stuff.patch
 
       - name: Add Configuration Settings
@@ -325,13 +324,15 @@ jobs:
           # modify UTS_VERSION
           perl -pi -e 's{UTS_VERSION="\$\(echo \$UTS_VERSION \$CONFIG_FLAGS \$TIMESTAMP \| cut -b -\$UTS_LEN\)"}{UTS_VERSION="#1 SMP PREEMPT Sun Apr 20 04:20:00 UTC 2025"}' ./common/scripts/mkcompile_h
           
-          sed -i '$s|echo "\$res"|echo "\$res-${{ inputs.kernelsu_variant }}-v${KSUVER}-SUSFS-v1.5.7-Wild"|' ./common/scripts/setlocalversion
+          sed -i '$s|echo "\$res"|echo "\$res-${{ inputs.kernelsu_variant }}-$KSUVER-SUSFS-v1.5.8"|' ./common/scripts/setlocalversion
           if [ -f "build/build.sh" ]; then
             sed -i 's/-dirty//' ./common/scripts/setlocalversion
           else
             sed -i 's/build-timestamp = $(or $(KBUILD_BUILD_TIMESTAMP), $(build-timestamp-auto))/build-timestamp = "Sun Apr 20 04:20:00 UTC 2025"/' ./common/init/Makefile
+            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' ./common/BUILD.bazel
+            rm -rf ./common/android/abi_gki_protected_exports_*
             sed -i "/stable_scmversion_cmd/s/-maybe-dirty//g" ./build/kernel/kleaf/impl/stamp.bzl
-            sed -E -i "/^CONFIG_LOCALVERSION=/ s/(.*)\"/\\1-${{ inputs.kernelsu_variant }}-v${KSUVER}-SUSFS-v1.5.7-Wild\"/" ./common/arch/arm64/configs/gki_defconfig
+            sed -E -i "/^CONFIG_LOCALVERSION=/ s/(.*)\"/\\1-${{ inputs.kernelsu_variant }}-$KSUVER-SUSFS-v1.5.8\"/" ./common/arch/arm64/configs/gki_defconfig
           fi
 
       - name: Build
